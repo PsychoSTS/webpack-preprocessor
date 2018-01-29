@@ -8,7 +8,7 @@ let EOLChar;        // Holds content EOL marker.
 
 // Used regexes
 const globalRegex = /(?:((?:\/[*]|<!--).*?(?:[*]\/|-->))|(.*?))*/gm;
-const DIRECTIVE_REGEX = /(?:(?:\/\*+|<!--)#)(if|elif|elseif)\s?(.+)?(?:\*\/)/gm;
+const DIRECTIVE_REGEX = /(?:(?:(?:\/\*+)|(?:<!--))#)(if|elif|elseif|else)\s?(.+)?(?:(?:\*\/)|(?:-->))/gm;
 const DIRECTIVE_END_REGEX = /((?:\/\*+|<!--)#)(endif)/;
 
 // Consts
@@ -17,6 +17,7 @@ const LOGICAL_EXPRESSION = 'LogicalExpression';
 const UNARY_EXPRESSION = 'UnaryExpression';
 const OR = '||';
 const AND = '&&';
+const ELSE = 'else';
 
 function parseLogicalExpression(expression) {
 
@@ -30,7 +31,7 @@ function parseLogicalExpression(expression) {
             console.error('Webpack Pre-Processor does not support unary operators other than the "!" operator.');
             return false;
         }
-        
+
         return !parseLogicalExpression(expression.argument);
     }
     else if (type === LOGICAL_EXPRESSION) {
@@ -56,7 +57,12 @@ function parseLogicalExpression(expression) {
 function getDirectiveCode(branchRules, code = '') {
 
     let activeBranch = _.find(branchRules, rule => {
-        return parseLogicalExpression(rule.expression);
+        if(rule.type === ELSE){
+            return true;
+        }
+        else {
+            return parseLogicalExpression(rule.expression);
+        }
     });
 
     if (activeBranch) {
@@ -120,7 +126,7 @@ function parseMatches(matches, stack = [{ content: [] }]) {
     let match;
     let directiveTokens;
     if(directiveTokens = DIRECTIVE_REGEX.exec(line)){
-        
+
         // Remove the previous directive expression if it exists
         if(stack.length > 2){
             stack.shift();
@@ -137,7 +143,7 @@ function parseMatches(matches, stack = [{ content: [] }]) {
             target.content.push(directive);
         }
 
-        let directiveExpression = parseDirective(line, directiveTokens);
+        let directiveExpression = parseDirectiveExpression(line, directiveTokens);
 
         // Make the directive the active stack element
         target = stack[0];
@@ -165,28 +171,31 @@ function parseMatches(matches, stack = [{ content: [] }]) {
     return stack;
 }
 
-function parseDirective(line, tokens){
+function parseDirectiveExpression(line, tokens){
 
     // Remove directive start token (/**# | <!--#)
     tokens.shift();
-    
-    let type = tokens.shift();
-    let expressionTree = jsep(tokens.shift());
 
-    let directiveExpression = {
+    let type = tokens.shift();
+
+    let expressionTree = null;
+    if (type && type !== ELSE){
+        expressionTree = jsep(tokens.shift());
+    }
+
+    return {
         type: type,
         expression: expressionTree,
         content: [],
         line: line
     };
-    return directiveExpression;
 }
 
 function PreprocessorLoader(content) {
 
     let options = loaderUtils.getOptions(this);
     if (options && options.blocks) {
-        definitions = options.blocks;   
+        definitions = options.blocks;
     }
 
     setUp(content);
@@ -196,7 +205,7 @@ function PreprocessorLoader(content) {
 
     let matches = getMatches(content);
     if (!matches) {
-       return content;
+        return content;
     }
 
     let expressions = parseMatches(matches);

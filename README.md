@@ -3,13 +3,13 @@ Webpack Preprocessor
 
 Webpack plugin for preprocessor support
 
-This project is my first attempt at making a webpack loader and is based on the webpack-strip-block project by jballant
-<a href="https://github.com/jballant/webpack-strip-block">webpack-strip-block</a>
+This is a fork of the [original webpack-preprocessor](https://github.com/Marc-Andre-Rivet/webpack-preprocessor), with some added expression
+parsing capabilities.
 
-###Example:
-
+### JS Example:
 ```javascript
 funcion foo() {
+    // Multiple blocks of logical expressions
     /*#if dev*/
     let bar = 'dev';
     /*#elif stage&&test*/
@@ -20,31 +20,38 @@ funcion foo() {
     let bar = 'prod';
     /*#endif*/
 
+    // Unary operators
     /*#if !dev*/
     bar += '!dev';
     /*#endif*/
     
-    /*#if cond1&&cond2||cond3 */ // <-- combinations of && and || operators are not supported
+    /*#if cond1&&cond2||cond3 */ // <-- Any combination of && and || operators are now supported
     /*#endif*/
 
     console.log(bar);
 }
 ```
-
+### HTML Example:
 ``` html
 <!--#if dev||stage-->
 <div>DEVELOPMENT VERSION</div>
 <!--#endif-->
 ```
 
-webpack.config:
+### webpack.config:
 
 ```javascript
-{
-    module: {
-        loaders: [
-            { test: /\.(js|htm(l?))$/, loader: "webpack-preprocessor?definitions=['stage,test']" }
-        ]
-    }
-};
+module: {
+    rules: [
+        { // webpack-preprocessor
+            loader: 'webpack-preprocessor',
+            options: {
+                blocks: [
+                    'stage',
+                    'test'
+                ]
+            }
+        }
+    ]
+}
 ```
