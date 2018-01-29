@@ -19,6 +19,7 @@
   "contributors": [],
   "license": "MIT",
   "dependencies": {
-    "lodash": "^4.17.4"
+    "lodash": "^4.17.4",
+    "jsep": "^0.3.3"
   }
 }

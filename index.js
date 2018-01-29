@@ -1,36 +1,62 @@
-let _ = require('lodash');
-let loaderUtils = require('loader-utils');
+const _ = require('lodash');
+const jsep = require("jsep");
+const loaderUtils = require('loader-utils');
 const os = require('os');
 
-let definitions;
+let definitions;    // Holds the given definition flags
 let EOLChar;        // Holds content EOL marker.
 
+// Used regexes
 const globalRegex = /(?:((?:\/[*]|<!--).*?(?:[*]\/|-->))|(.*?))*/gm;
+const DIRECTIVE_REGEX = /(?:(?:\/\*+|<!--)#)(if|elif|elseif)\s?(.+)?(?:\*\/)/gm;
+const DIRECTIVE_END_REGEX = /((?:\/\*+|<!--)#)(endif)/;
 
-const elifRegex = /(?:\/[*]|<!--)(?:\s*)#elif\s+([!]?\w+(?:(?:&&[!]?\w+)*|(?:[|]{2}[!]?\w+)*))(?:\s*)(?:[*]\/|-->)/;
-const elseRegex = /(?:\/[*]|<!--)(?:\s*)#else(?:\s*)(?:[*]\/|-->)/;
-const endifRegex = /(?:\/[*]|<!--)(?:\s*)#endif(?:\s*)(?:[*]\/|-->)/;
-const ifRegex = /(?:\/[*]|<!--)(?:\s*)#if\s+([!]?\w+(?:(?:&&[!]?\w+)*|(?:[|]{2}[!]?\w+)*))(?:\s*)(?:[*]\/|-->)/;
+// Consts
+const IDENTIFIER = 'Identifier';
+const LOGICAL_EXPRESSION = 'LogicalExpression';
+const UNARY_EXPRESSION = 'UnaryExpression';
+const OR = '||';
+const AND = '&&';
 
-function getBranchCode(branchRules, code = '') {
-    let activeBranch = _.find(branchRules, rule => {
-        if (!rule.condition) { return true; }
+function parseLogicalExpression(expression) {
 
-        if (rule.condition.type === 'and') {
-            let r = _.intersection(rule.condition.regard, definitions);
-            let dr = _.difference(rule.condition.disregard, definitions);
+    let type = expression.type;
 
-            return r.length + dr.length === rule.condition.regard.length + rule.condition.disregard.length;
-        } else if (rule.condition.type === 'or') {
-            let r = _.intersection(rule.condition.regard, definitions);
-            let dr = _.difference(rule.condition.disregard, definitions);
-
-            return r.length + dr.length > 0;
-        } else if (rule.condition[0] === '!') {
-            return definitions.indexOf(rule.condition.substr(1)) === -1;
-        } else {
-            return definitions.indexOf(rule.condition) !== -1;
+    if(type === IDENTIFIER){
+        return definitions.indexOf(expression.name) > -1;
+    }
+    else if(type === UNARY_EXPRESSION){
+        if(expression.operator !== '!') {
+            console.error('Webpack Pre-Processor does not support unary operators other than the "!" operator.');
+            return false;
         }
+        
+        return !parseLogicalExpression(expression.argument);
+    }
+    else if (type === LOGICAL_EXPRESSION) {
+
+        let operator = expression.operator;
+        let left = expression.left;
+        let right = expression.right;
+
+        let leftResult, rightResult;
+
+        leftResult = parseLogicalExpression(left);
+        rightResult = parseLogicalExpression(right);
+
+        if(operator === OR){
+            return leftResult || rightResult;
+        }
+        else if(operator === AND){
+            return leftResult && rightResult;
+        }
+    }
+}
+
+function getDirectiveCode(branchRules, code = '') {
+
+    let activeBranch = _.find(branchRules, rule => {
+        return parseLogicalExpression(rule.expression);
     });
 
     if (activeBranch) {
@@ -47,106 +73,14 @@ function getCode(rules, code = '') {
 
     if (rule.type === 'expression' && rule.content) {
         code += EOLChar + rule.content;
-    } else if (rule.type === 'branch') {
-        code += getBranchCode(rule.content) || '';
+    } else if (rule.type === 'directive') {
+        code += getDirectiveCode(rule.content) || '';
     }
 
     return getCode(rules, code);
 }
 
-function getCondition(expression) {
-    if (expression.indexOf('&&') !== -1) {
-        let definitions = expression.split('&&');
-
-        return {
-            type: 'and',
-            regard: _.filter(definitions, def => def[0] !== '!'),
-            disregard: _.map(_.filter(definitions, def => def[0] === '!'), def => def.substr(1))
-        };
-    } else if (expression.indexOf('||') !== -1) {
-        let definitions = expression.split('||');
-
-        return {
-            type: 'or',
-            regard: _.filter(definitions, def => def[0] !== '!'),
-            disregard: _.map(_.filter(definitions, def => def[0] === '!'), def => def.substr(1))
-        };
-    } else {
-        return expression;
-    }
-}
-
-function getRules(matches, stack = [{ content: [] }]) {
-    let current = matches.shift();
-    if (!current) {
-        return stack[0];
-    }
-
-    let target;
-
-    let match;
-    if (match = current.match(ifRegex)) {
-        target = stack[0];
-
-        let branch = {
-            type: 'branch',
-            content: []
-        };
-        stack.unshift(branch);
-
-        let ifBlock = {
-            type: 'if',
-            condition: getCondition(match[1]),
-            content: []
-        };
-        stack.unshift(ifBlock);
-        branch.content.push(ifBlock);
-
-        target.content.push(branch);
-        target.content.push(ifBlock);
-    } else if (match = current.match(elifRegex)) {
-        stack.shift(); // out of if
-        target = stack[0];
-
-        let ifBlock = {
-            type: 'if',
-            condition: getCondition(match[1]),
-            content: []
-        };
-        stack.unshift(ifBlock);
-
-        target.content.push(ifBlock);
-    } else if (match = current.match(elseRegex)) {
-        stack.shift(); // out of if
-        target = stack[0];
-
-        let ifBlock = {
-            type: 'if',
-            content: []
-        };
-        stack.unshift(ifBlock);
-
-        target.content.push(ifBlock);
-    } else if (match = current.match(endifRegex)) {
-        stack.shift(); // out of if
-        stack.shift(); // out of branch
-    } else {
-        target = stack[0];
-
-        target.content.push({
-            type: 'expression',
-            content: current
-        });
-    }
-
-    getRules(matches, stack);
-    return stack;
-}
-
-function PreprocessorLoader(content) {
-    let query = loaderUtils.parseQuery(this.query) || {};
-    definitions = query.definitions || [];
-
+function setUp(content) {
     // Dynamically determine file end of line (EOL) marker.
     // Use os.EOL if no EOL marker found.
     // Note: ECMA 5.1 Specifications permits end slicing
@@ -165,22 +99,113 @@ function PreprocessorLoader(content) {
     }
 
     // Trim removes EOL marker. Place after finding it.
-    if (!content.trim()) {
-        return content;
-    }
+    content.trim();
+}
 
+function getMatches(content) {
     let matches = content.match(globalRegex);
     // ignore empty matches
     matches = _.filter(matches, match => match && match.length);
 
-    let rules = getRules(matches);
-    if (!rules) {
+    return matches;
+}
+
+function parseMatches(matches, stack = [{ content: [] }]) {
+    let line = matches.shift();
+    if(!line){
+        return stack[0];
+    }
+
+    let target;
+    let match;
+    let directiveTokens;
+    if(directiveTokens = DIRECTIVE_REGEX.exec(line)){
+        
+        // Remove the previous directive expression if it exists
+        if(stack.length > 2){
+            stack.shift();
+        }
+        // Create a directive for the directive expressions
+        else if(stack.length === 1){
+            target = stack[0];
+
+            let directive = {
+                type: 'directive',
+                content: []
+            }
+            stack.unshift(directive);
+            target.content.push(directive);
+        }
+
+        let directiveExpression = parseDirective(line, directiveTokens);
+
+        // Make the directive the active stack element
+        target = stack[0];
+
+        // Target must be the directive at this point
+        target.content.push(directiveExpression);
+
+        // New directive block
+        stack.unshift(directiveExpression);
+    }
+    else if(line.match(DIRECTIVE_END_REGEX)){
+        stack.shift(); // Remove directive from stack as we are now finnished with it
+        stack.shift(); // Remove directive from stack as we are now finnished with it
+    }
+    else {
+        target = stack[0];
+
+        target.content.push({
+            type: 'expression',
+            content: line
+        });
+    }
+
+    parseMatches(matches, stack);
+    return stack;
+}
+
+function parseDirective(line, tokens){
+
+    // Remove directive start token (/**# | <!--#)
+    tokens.shift();
+    
+    let type = tokens.shift();
+    let expressionTree = jsep(tokens.shift());
+
+    let directiveExpression = {
+        type: type,
+        expression: expressionTree,
+        content: [],
+        line: line
+    };
+    return directiveExpression;
+}
+
+function PreprocessorLoader(content) {
+
+    let options = loaderUtils.getOptions(this);
+    if (options && options.blocks) {
+        definitions = options.blocks;   
+    }
+
+    setUp(content);
+    if (!content) {
         return content;
     }
 
-    rules = rules.shift().content;
+    let matches = getMatches(content);
+    if (!matches) {
+       return content;
+    }
 
-    let code = getCode(rules);
+    let expressions = parseMatches(matches);
+    if(!expressions) {
+        return content;
+    }
+
+    expressions = expressions.shift().content;
+    let code = getCode(expressions);
 
     if (this.cacheable) {
         this.cacheable(true);
@@ -191,14 +216,6 @@ function PreprocessorLoader(content) {
     // programs to complain if final line EOL marker is
     // missing.
     content = code + EOLChar;
-
-    let variables = query.variables || [];
-
-    _.each(variables, (value, key) => {
-        let regex = new RegExp(`[$]{2}[{]{2}${key}[}]{2}`, 'g');
-
-        content = content.replace(regex, value)
-    });
 
     return content;
 }
