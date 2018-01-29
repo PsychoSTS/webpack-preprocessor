@@ -1,6 +1,6 @@
 {
   "name": "webpack-preprocessor",
-  "version": "0.1.10",
+  "version": "0.1.11",
   "description": "Webpack loader for preprocessor support in JS",
   "main": "index.js",
   "repository": {
@@ -16,7 +16,9 @@
   "author": {
     "name": "Marc-André Rivet"
   },
-  "contributors": [],
+  "contributors": [
+    "Roelof Jooste"
+  ],
   "license": "MIT",
   "dependencies": {
     "lodash": "^4.17.4",

@@ -3,8 +3,8 @@ Webpack Preprocessor
 
 Webpack plugin for preprocessor support
 
-This is a fork of the [original webpack-preprocessor](https://github.com/Marc-Andre-Rivet/webpack-preprocessor), with some added expression
-parsing capabilities.
+This project is my first attempt at making a webpack loader and is based on the webpack-strip-block project by jballant
+<a href="https://github.com/jballant/webpack-strip-block">webpack-strip-block</a>
 
 ### JS Example:
 ```javascript
